@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docling Redactor — black out what shouldn't leave the room</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar__brand">
+    <img class="topbar__logo" src="{{ url_for('static', filename='img/cause-of-capital-logo.svg') }}" alt="Cause of Capital logo">
+    <span class="topbar__name">DOCLING REDACTOR</span>
+  </div>
+  <span class="topbar__tag">case-file redaction workroom</span>
+  <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle color mode">
+    <span class="theme-toggle__dot" aria-hidden="true"></span>
+    <span id="themeToggleLabel">Light mode</span>
+  </button>
+</header>
+
+<section class="hero">
+  <div class="hero__stamp" aria-hidden="true">CASE&nbsp;OPEN</div>
+  <h1 class="hero__title">
+    Black out what
+    <span class="redact-word" data-reveal-delay="0">
+      <span class="redact-word__text">shouldn't</span>
+      <span class="redact-word__bar"></span>
+    </span>
+    leave the room.
+  </h1>
+  <p class="hero__sub">
+    Drop in a document, mark what needs to disappear, get back a clean copy.
+    Docling reads the file; a format-native writer performs the redaction —
+    text and glyphs are actually removed, not just covered up.
+  </p>
+</section>
+
+<main class="workroom">
+
+  <!-- LEFT: exhibits (files) -->
+  <section class="panel panel--files" aria-labelledby="files-heading">
+    <h2 class="panel__heading" id="files-heading">Exhibits <span class="panel__count" id="fileCount">0</span></h2>
+    <p class="panel__hint">Drag files in, or browse. PDF, DOCX, PPTX, TXT, MD and more.</p>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload files">
+      <div class="dropzone__icon" aria-hidden="true">＋</div>
+      <div class="dropzone__label">Drop files here</div>
+      <div class="dropzone__sub">or click to browse</div>
+      <input id="fileInput" type="file" multiple hidden>
+    </div>
+
+    <ul id="fileList" class="exhibit-list"></ul>
+  </section>
+
+  <!-- RIGHT: redaction rules -->
+  <section class="panel panel--rules" aria-labelledby="rules-heading">
+    <h2 class="panel__heading" id="rules-heading">What to redact</h2>
+
+    <div class="rule-group">
+      <h3 class="rule-group__title">Built-in detectors</h3>
+      <div class="detector-grid">
+        {% for label in patterns %}
+        <label class="detector">
+          <input type="checkbox" class="detector__input" value="{{ label }}"
+            {% if label in ["Email addresses", "Phone numbers", "Social Security Numbers", "Credit card numbers"] %}checked{% endif %}>
+          <span class="detector__box" aria-hidden="true"></span>
+          <span class="detector__label">{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="rule-group">
+      <h3 class="rule-group__title">Custom keywords <span class="rule-group__note">one per line</span></h3>
+      <textarea id="keywordsInput" class="text-area" placeholder="Project Nightfall&#10;John Smith&#10;Acme Corp — internal use only"></textarea>
+    </div>
+
+    <div class="rule-group">
+      <h3 class="rule-group__title">Custom regex <span class="rule-group__note">advanced, one per line</span></h3>
+      <textarea id="regexInput" class="text-area text-area--mono" placeholder="EMP-\d{6}&#10;[A-Z]{2}-\d{4}-[A-Z]{2}"></textarea>
+    </div>
+
+    <div class="rule-group rule-group--options">
+      <label class="toggle">
+        <input type="checkbox" id="caseSensitive">
+        <span class="toggle__box" aria-hidden="true"></span>
+        Case sensitive
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="wholeWord">
+        <span class="toggle__box" aria-hidden="true"></span>
+        Whole word match
+      </label>
+
+      <div class="style-choice">
+        <span class="style-choice__label">Redaction mark</span>
+        <div class="segmented" id="styleSegmented">
+          <button type="button" class="segmented__opt is-active" data-value="box">████ block</button>
+          <button type="button" class="segmented__opt" data-value="label">[REDACTED]</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<section class="run-bar">
+  <button id="startBtn" class="btn btn--primary" disabled>
+    <span class="btn__icon" aria-hidden="true">▮▮</span>
+    Redact files
+  </button>
+  <div class="run-bar__progress">
+    <div class="progress" id="progressOuter" hidden>
+      <div class="progress__fill" id="progressFill"></div>
+    </div>
+    <span class="run-bar__status" id="statusText">Add exhibits and choose what to redact to begin.</span>
+  </div>
+</section>
+
+<section class="console" id="consoleSection" hidden aria-labelledby="console-heading">
+  <div class="console__head">
+    <h2 class="console__title" id="console-heading">Activity log</h2>
+    <span class="console__dot" id="consoleDot" aria-hidden="true"></span>
+  </div>
+  <pre class="console__body" id="logBody"></pre>
+</section>
+
+<section class="results" id="resultsSection" hidden aria-labelledby="results-heading">
+  <div class="results__head">
+    <h2 class="results__title" id="results-heading">Redacted copies!</h2>
+    <a id="downloadAllBtn" class="btn btn--ghost" hidden>Download all (.zip)</a>
+  </div>
+  <ul class="manifest" id="resultsList"></ul>
+</section>
+
+<footer class="foot">
+  <span>Originals are never modified — redacted copies only.</span>
+</footer>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 96" role="img" aria-labelledby="title desc">
+  <title id="title">Cause of Capital logo</title>
+  <desc id="desc">Blue emblem with the words Cause of Capital.</desc>
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#13a8ff"/>
+      <stop offset="100%" stop-color="#1e57ad"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(10 10)">
+    <circle cx="36" cy="36" r="31" fill="none" stroke="url(#ring)" stroke-width="10"/>
+    <circle cx="36" cy="36" r="10" fill="#1e57ad"/>
+    <g fill="#13a8ff" transform="translate(36 36)">
+      <rect x="-2" y="-39" width="4" height="8"/>
+      <rect x="-2" y="31" width="4" height="8"/>
+      <rect x="-39" y="-2" width="8" height="4"/>
+      <rect x="31" y="-2" width="8" height="4"/>
+      <rect x="-29" y="-29" width="6" height="6" transform="rotate(45)"/>
+      <rect x="23" y="-29" width="6" height="6" transform="rotate(45)"/>
+      <rect x="-29" y="23" width="6" height="6" transform="rotate(45)"/>
+      <rect x="23" y="23" width="6" height="6" transform="rotate(45)"/>
+    </g>
+  </g>
+
+  <g font-family="'IBM Plex Sans', 'Segoe UI', sans-serif" fill="#1f5fb7">
+    <text x="92" y="44" font-size="42" font-weight="800" letter-spacing="0.5">CAUSE</text>
+    <text x="252" y="44" font-size="24" font-weight="700">OF</text>
+    <text x="92" y="78" font-size="34" font-weight="800" letter-spacing="0.5">CAPITAL</text>
+  </g>
+</svg>
