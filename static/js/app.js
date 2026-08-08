@@ -50,14 +50,14 @@
       setTheme(stored, false);
       return;
     }
-    setTheme(themeMedia.matches ? "dark" : "light", false);
+    setTheme("light", false);
   }
 
   initializeTheme();
 
   if (themeToggle) {
     themeToggle.addEventListener("click", () => {
-      const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+      const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
       const nextTheme = currentTheme === "dark" ? "light" : "dark";
       setTheme(nextTheme, true);
     });
