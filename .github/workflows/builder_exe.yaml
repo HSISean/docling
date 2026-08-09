@@ -29,10 +29,10 @@ jobs:
           pip install pyinstaller
 
       - name: Build EXE
-        run: pyinstaller --onefile --windowed --name MyApp main.py
+        run: pyinstaller --onefile --windowed --name MyApp app.py
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
           name: MyApp-Windows
-          path: dist/MyApp.exe
+          path: dist/Docling.exe
