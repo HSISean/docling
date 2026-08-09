@@ -31,8 +31,30 @@ jobs:
       - name: Build EXE
         run: pyinstaller --onefile --windowed --name MyApp app.py
 
-      - name: Upload EXE
+      - name: Build Docling Windows executable
+        shell: powershell
+        run: |
+          pyinstaller `
+            --onefile `
+            --name "Docling" `
+            --distpath "$env:GITHUB_WORKSPACE\dist" `
+            main.py
+      
+      - name: Display generated files
+        shell: powershell
+        run: |
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+          Get-ChildItem "$env:GITHUB_WORKSPACE" -Recurse -File |
+            Where-Object { $_.Extension -eq ".exe" } |
+            Select-Object FullName, Length
+      
+          if (-not (Test-Path "$env:GITHUB_WORKSPACE\dist\Docling.exe")) {
+            throw "Expected executable was not created at dist\Docling.exe"
+          }
+      
+      - name: Upload Docling executable
         uses: actions/upload-artifact@v4
         with:
-          name: MyApp-Windows
-          path: MyApp.exe
+          name: Docling-Windows
+          path: ${{ github.workspace }}/dist/Docling.exe
+          if-no-files-found: error
