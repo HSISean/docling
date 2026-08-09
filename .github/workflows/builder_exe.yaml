@@ -35,4 +35,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyApp-Windows
+<<<<<<< Updated upstream
           path: dist/Docling.exe
+=======
+          path: MyApp.exe
+>>>>>>> Stashed changes
