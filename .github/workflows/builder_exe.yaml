@@ -38,7 +38,7 @@ jobs:
             --onefile `
             --name "Docling" `
             --distpath "$env:GITHUB_WORKSPACE\dist" `
-            main.py
+            app.py
       
       - name: Display generated files
         shell: powershell
