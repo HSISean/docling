@@ -36,8 +36,7 @@
   </h1>
   <p class="hero__sub">
     Drop in a document, mark what needs to disappear, get back a clean copy.
-    Docling reads the file; a format-native writer performs the redaction —
-    text and glyphs are actually removed, not just covered up.
+    Docling reads the file and exports a redacted Markdown copy.
   </p>
 </section>
 
@@ -46,7 +45,7 @@
   <!-- LEFT: exhibits (files) -->
   <section class="panel panel--files" aria-labelledby="files-heading">
     <h2 class="panel__heading" id="files-heading">Exhibits <span class="panel__count" id="fileCount">0</span></h2>
-    <p class="panel__hint">Drag files in, or browse. PDF, DOCX, PPTX, TXT, MD and more.</p>
+    <p class="panel__hint">Drag files in, or browse. Every result is a Markdown (.md) file.</p>
 
     <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload files">
       <div class="dropzone__icon" aria-hidden="true">＋</div>
@@ -68,7 +67,7 @@
         {% for label in patterns %}
         <label class="detector">
           <input type="checkbox" class="detector__input" value="{{ label }}"
-            {% if label in ["Email addresses", "Phone numbers", "Social Security Numbers", "Credit card numbers"] %}checked{% endif %}>
+            {% if label in ["Email addresses", "Phone numbers", "Social Security Numbers", "Employer Identification Numbers (EINs)", "Credit card numbers"] %}checked{% endif %}>
           <span class="detector__box" aria-hidden="true"></span>
           <span class="detector__label">{{ label }}</span>
         </label>

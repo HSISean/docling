@@ -7,6 +7,7 @@ BUILTIN_PATTERNS: dict[str, str] = {
     "Email addresses": r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     "Phone numbers": r"(?:\+?\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b",
     "Social Security Numbers": r"\b\d{3}-\d{2}-\d{4}\b",
+    "Employer Identification Numbers (EINs)": r"\b\d{2}-\d{7}\b",
     "Credit card numbers": r"\b(?:\d[ -]?){13,19}\b",
     "IP addresses": r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b",
     "Dates (MM/DD/YYYY etc.)": r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
@@ -19,10 +20,7 @@ BUILTIN_PATTERNS: dict[str, str] = {
 # Order in which categories are presented in the UI
 BUILTIN_PATTERN_ORDER = list(BUILTIN_PATTERNS.keys())
 
-SUPPORTED_NATIVE_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt", ".md"}
-
-# Formats docling can parse for preview/detection even if native redaction
-# falls back to a plain-text export.
+# Formats docling can parse for preview/detection and Markdown export.
 DOCLING_PREVIEW_EXTENSIONS = {
     ".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm", ".md", ".txt",
     ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".asciidoc",

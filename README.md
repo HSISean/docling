@@ -1,10 +1,9 @@
 # 🔒 Docling Redactor — Web
 
 A browser-based version of the redaction tool, built to deploy on Heroku.
-Same engine as the desktop app: **docling** parses and detects sensitive
-content across formats, and format-native writers (**PyMuPDF**,
-**python-docx**, **python-pptx**) perform the actual redaction so the
-output is a real edited file, not a screenshot.
+**docling** parses supported source files and exports their content as
+Markdown. The selected detectors redact sensitive content, including EINs,
+and every successful result is downloaded as a `.md` file.
 
 ## What's in here
 
@@ -78,11 +77,13 @@ to download its layout model, so local dev needs internet on first run too.
    files to a temp job folder and starts a **background thread** — this
    keeps the HTTP request itself fast, well under Heroku's 30-second router
    timeout, even for slow documents.
-3. The page polls `GET /api/jobs/<id>` once a second for log lines,
+3. Docling converts each supported source to Markdown and the selected
+   redaction rules are applied to the exported content.
+4. The page polls `GET /api/jobs/<id>` once a second for log lines,
    progress, and final results.
-4. Redacted files are served from `GET /api/jobs/<id>/download/<file>`, or
+5. Redacted `.md` files are served from `GET /api/jobs/<id>/download/<file>`, or
    all together as a zip from `GET /api/jobs/<id>/download-all`.
-5. Job files are cleaned up automatically after an hour.
+6. Job files are cleaned up automatically after an hour.
 
 ## Important constraint: single web dyno
 
@@ -106,10 +107,7 @@ the one running the job and come back 404.
 
 ## Limitations (same as the desktop engine)
 
-- PDF redaction matches exact text per page; text broken across lines or
-  unusual columns may not always be fully caught — spot-check output.
 - Built-in patterns (credit cards, passports, etc.) are heuristic regexes
   and can have false positives/negatives.
-- Formats without a native writer (xlsx, html, images, ...) fall back to a
-  redacted plain-text export rather than an edited copy of the original
-  file.
+- Output is a Markdown representation of the source, not an edited copy in
+  the original file format.

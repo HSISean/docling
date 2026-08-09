@@ -3,23 +3,10 @@ redaction_engine.py
 
 Architecture
 ------------
-Docling (docling.document_converter.DocumentConverter) is used as the
-universal parsing/detection layer: it can open PDFs, Word docs, PowerPoint
-decks, HTML, images and more, and hand back clean plain text regardless of
-source format. We run the user's detection rules (built-in PII patterns,
-custom keywords, custom regex) against that docling-extracted text to decide
-*what* needs to be redacted and to show a live preview/count in the UI.
-
-Docling does not write documents back out, so the actual redaction (removing
-or blacking-out the matched content in the *original* file) is performed by
-format-native libraries that understand each container format:
-    - PDF   -> PyMuPDF (fitz): true redaction (annotation + apply_redactions,
-              which strips the underlying text/glyphs, not just a visual box)
-    - DOCX  -> python-docx: run-level text replacement
-    - PPTX  -> python-pptx: shape/text-frame run-level replacement
-    - TXT/MD -> plain text substitution
-    - anything else docling can read -> exported to a redacted .txt with a
-      note, since we cannot safely rewrite an unknown binary container.
+Docling (docling.document_converter.DocumentConverter) is the universal
+parsing layer. It converts supported source files to Markdown, then the
+selected built-in PII patterns, custom keywords, and custom regex rules are
+applied to that Markdown. Every successful redaction is written as a .md file.
 """
 
 from __future__ import annotations
@@ -92,21 +79,12 @@ class RedactionEngine:
         return self.find_matches(text)
 
     # ------------------------------------------------------------------ #
-    # redaction dispatch
+    # Markdown redaction export
     # ------------------------------------------------------------------ #
     def redact(self, path: Path, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        ext = path.suffix.lower()
         try:
-            if ext == ".pdf":
-                return self._redact_pdf(path, output_dir)
-            if ext == ".docx":
-                return self._redact_docx(path, output_dir)
-            if ext == ".pptx":
-                return self._redact_pptx(path, output_dir)
-            if ext in (".txt", ".md"):
-                return self._redact_text(path, output_dir)
-            return self._redact_fallback(path, output_dir)
+            return self._redact_markdown(path, output_dir)
         except Exception as exc:  # noqa: BLE001
             self._log(f"  ERROR redacting {path.name}: {exc}")
             self._log(traceback.format_exc(limit=2))
@@ -131,153 +109,16 @@ class RedactionEngine:
             text = rule.pattern.sub(make_sub(), text)
         return text, count
 
-    def _collect_tokens(self, text: str) -> set[str]:
-        """All distinct raw matches across all rules, longest-first so that
-        e.g. a full credit-card match is redacted before shorter overlapping
-        substrings."""
-        tokens: set[str] = set()
-        for rule in self.rules:
-            for m in rule.pattern.finditer(text):
-                token = m.group(0)
-                if token and token.strip():
-                    tokens.add(token)
-        return tokens
+    def _redact_markdown(self, path: Path, output_dir: Path) -> Path:
+        if path.suffix.lower() in (".txt", ".md"):
+            markdown = path.read_text(encoding="utf-8", errors="replace")
+        else:
+            markdown = self.extract_text_with_docling(path)
 
-    # ------------------------------------------------------------------ #
-    # PDF — true redaction via PyMuPDF
-    # ------------------------------------------------------------------ #
-    def _redact_pdf(self, path: Path, output_dir: Path) -> Path:
-        import fitz  # PyMuPDF
-
-        doc = fitz.open(str(path))
-        total = 0
-        for page_index, page in enumerate(doc):
-            page_text = page.get_text()
-            tokens = self._collect_tokens(page_text)
-            # Redact longer tokens first to avoid leaving remnants of a
-            # shorter overlapping match (e.g. part of a credit card number).
-            for token in sorted(tokens, key=len, reverse=True):
-                areas = page.search_for(token)
-                for rect in areas:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-                    total += 1
-            if tokens:
-                page.apply_redactions()
-        out_path = self._unique_path(output_dir, path.stem, "_redacted.pdf")
-        doc.save(str(out_path), garbage=4, deflate=True)
-        doc.close()
-        self._log(f"  PDF: {total} region(s) permanently redacted across {page_index + 1} page(s).")
-        return out_path
-
-    # ------------------------------------------------------------------ #
-    # DOCX — python-docx run-level replacement
-    # ------------------------------------------------------------------ #
-    def _redact_docx(self, path: Path, output_dir: Path) -> Path:
-        from docx import Document
-
-        doc = Document(str(path))
-        total = 0
-
-        def redact_paragraph(paragraph) -> None:
-            nonlocal total
-            for run in paragraph.runs:
-                if not run.text:
-                    continue
-                new_text, n = self._redact_string(run.text)
-                if n:
-                    run.text = new_text
-                    total += n
-
-        for p in doc.paragraphs:
-            redact_paragraph(p)
-
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for p in cell.paragraphs:
-                        redact_paragraph(p)
-
-        for section in doc.sections:
-            for hdr_ftr in (section.header, section.footer):
-                for p in hdr_ftr.paragraphs:
-                    redact_paragraph(p)
-
-        out_path = self._unique_path(output_dir, path.stem, "_redacted.docx")
-        doc.save(str(out_path))
-        self._log(f"  DOCX: {total} match(es) redacted.")
-        return out_path
-
-    # ------------------------------------------------------------------ #
-    # PPTX — python-pptx shape/run-level replacement
-    # ------------------------------------------------------------------ #
-    def _redact_pptx(self, path: Path, output_dir: Path) -> Path:
-        from pptx import Presentation
-
-        prs = Presentation(str(path))
-        total = 0
-
-        def redact_shape(shape) -> None:
-            nonlocal total
-            if shape.has_text_frame:
-                for paragraph in shape.text_frame.paragraphs:
-                    for run in paragraph.runs:
-                        if not run.text:
-                            continue
-                        new_text, n = self._redact_string(run.text)
-                        if n:
-                            run.text = new_text
-                            total += n
-            if shape.has_table:
-                for row in shape.table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.text_frame.paragraphs:
-                            for run in paragraph.runs:
-                                new_text, n = self._redact_string(run.text)
-                                if n:
-                                    run.text = new_text
-                                    total += n
-            if shape.shape_type == 6:  # GROUP
-                for sub_shape in shape.shapes:
-                    redact_shape(sub_shape)
-
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                redact_shape(shape)
-            if slide.has_notes_slide:
-                for shape in slide.notes_slide.shapes:
-                    redact_shape(shape)
-
-        out_path = self._unique_path(output_dir, path.stem, "_redacted.pptx")
-        prs.save(str(out_path))
-        self._log(f"  PPTX: {total} match(es) redacted.")
-        return out_path
-
-    # ------------------------------------------------------------------ #
-    # Plain text / markdown
-    # ------------------------------------------------------------------ #
-    def _redact_text(self, path: Path, output_dir: Path) -> Path:
-        content = path.read_text(encoding="utf-8", errors="replace")
-        new_content, n = self._redact_string(content)
-        out_path = self._unique_path(output_dir, path.stem, f"_redacted{path.suffix}")
-        out_path.write_text(new_content, encoding="utf-8")
-        self._log(f"  TEXT: {n} match(es) redacted.")
-        return out_path
-
-    # ------------------------------------------------------------------ #
-    # Fallback for other docling-readable formats (xlsx, html, images, etc.)
-    # ------------------------------------------------------------------ #
-    def _redact_fallback(self, path: Path, output_dir: Path) -> Path:
-        self._log(f"  No native writer for '{path.suffix}'; exporting redacted text via docling.")
-        text = self.extract_text_with_docling(path)
-        new_text, n = self._redact_string(text)
-        out_path = self._unique_path(output_dir, path.stem, "_redacted.txt")
-        header = (
-            f"# Redacted text export of {path.name}\n"
-            f"# Original format '{path.suffix}' has no in-place redaction writer;\n"
-            f"# this is a docling-extracted, redacted plain-text version.\n\n"
-        )
-        out_path.write_text(header + new_text, encoding="utf-8")
-        self._log(f"  FALLBACK: {n} match(es) redacted in extracted text.")
+        redacted_markdown, count = self._redact_string(markdown)
+        out_path = self._unique_path(output_dir, path.stem, "_redacted.md")
+        out_path.write_text(redacted_markdown, encoding="utf-8")
+        self._log(f"  MARKDOWN: {count} match(es) redacted.")
         return out_path
 
     # ------------------------------------------------------------------ #

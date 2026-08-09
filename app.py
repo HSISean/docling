@@ -176,7 +176,7 @@ def _run_job(job_id: str, files: list[Path], output_dir: Path, rules, style: str
                     summary = ", ".join(f"{k}: {v}" for k, v in matches.items())
                     _log(job_id, f"  Detected -> {summary}")
                 else:
-                    _log(job_id, "  No matches in docling preview (native scan still runs).")
+                    _log(job_id, "  No matches in docling preview (Markdown export still runs).")
 
                 _log(job_id, f"  Redacting {path.name}...")
                 out_path = engine.redact(path, output_dir)
