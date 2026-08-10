@@ -15,6 +15,8 @@ Serve with gunicorn (used in production / Heroku, see Procfile):
 
 from __future__ import annotations
 
+import os
+import secrets
 import shutil
 import tempfile
 import threading
@@ -37,6 +39,7 @@ JOBS_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+shutdown_token = secrets.token_urlsafe(32)
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
@@ -247,6 +250,24 @@ def too_large(_exc):
 def healthz():
     return jsonify({"status": "ok"})
 
+
+@app.post("/app/shutdown")
+def shutdown_application():
+    # Only permit requests originating from this computer.
+    if request.remote_addr not in {"127.0.0.1", "::1"}:
+        abort(403)
+
+    if request.headers.get("X-Shutdown-Token") != shutdown_token:
+        abort(403)
+
+    # Delay termination long enough to return the response.
+    threading.Timer(0.5, lambda: os._exit(0)).start()
+
+    return jsonify({"message": "Docling is shutting down."})
+
+@app.context_processor
+def provide_shutdown_token():
+    return {"shutdown_token": shutdown_token}
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

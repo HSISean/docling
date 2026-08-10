@@ -130,6 +130,8 @@
   <pre class="console__body" id="logBody"></pre>
 </section>
 
+
+
 <section class="results" id="resultsSection" hidden aria-labelledby="results-heading">
   <div class="results__head">
     <h2 class="results__title" id="results-heading">Redacted copies!</h2>
@@ -140,8 +142,84 @@
 
 <footer class="foot">
   <span>Originals are never modified — redacted copies only.</span>
+  <button
+    type="button"
+    id="shutdown-app"
+    class="shutdown-trigger"
+    aria-haspopup="dialog"
+    aria-controls="shutdown-dialog"
+  >
+    <span class="shutdown-trigger__dot" aria-hidden="true"></span>
+    Shut down app
+  </button>
 </footer>
 
+<dialog id="shutdown-dialog" class="shutdown-dialog" aria-labelledby="shutdown-title">
+  <div class="shutdown-dialog__stamp" aria-hidden="true">CASE CLOSURE</div>
+  <h2 id="shutdown-title" class="shutdown-dialog__title">Shut down Docling?</h2>
+  <p class="shutdown-dialog__copy">
+    This ends the local session immediately. Any redaction still in progress will be lost.
+  </p>
+  <p id="shutdown-error" class="shutdown-dialog__error" role="alert" hidden>
+    Shutdown failed. Docling is still running.
+  </p>
+  <div class="shutdown-dialog__actions">
+    <button type="button" id="cancel-shutdown" class="btn btn--quiet">Keep working</button>
+    <button type="button" id="confirm-shutdown" class="btn btn--danger">Shut down</button>
+  </div>
+</dialog>
+
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+(() => {
+  const trigger = document.getElementById("shutdown-app");
+  const dialog = document.getElementById("shutdown-dialog");
+  const cancelButton = document.getElementById("cancel-shutdown");
+  const confirmButton = document.getElementById("confirm-shutdown");
+  const errorMessage = document.getElementById("shutdown-error");
+
+  trigger.addEventListener("click", () => {
+    errorMessage.hidden = true;
+    dialog.showModal();
+  });
+
+  cancelButton.addEventListener("click", () => dialog.close());
+
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  confirmButton.addEventListener("click", async () => {
+    confirmButton.disabled = true;
+    confirmButton.textContent = "Shutting down...";
+    errorMessage.hidden = true;
+
+    try {
+      const response = await fetch("/app/shutdown", {
+        method: "POST",
+        headers: {
+          "X-Shutdown-Token": "{{ shutdown_token }}"
+        }
+      });
+
+      if (!response.ok) throw new Error("Shutdown request failed");
+
+      dialog.close();
+      document.body.innerHTML = `
+        <main class="shutdown-complete">
+          <div class="shutdown-complete__mark" aria-hidden="true">CASE CLOSED</div>
+          <p class="shutdown-complete__eyebrow">LOCAL SESSION TERMINATED</p>
+          <h1 class="shutdown-complete__title">Docling has shut down.</h1>
+          <p class="shutdown-complete__copy">The workroom is secure. You can close this browser tab.</p>
+        </main>
+      `;
+    } catch (error) {
+      errorMessage.hidden = false;
+      confirmButton.disabled = false;
+      confirmButton.textContent = "Shut down";
+    }
+  });
+})();
+</script>
 </body>
 </html>
