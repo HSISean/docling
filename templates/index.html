@@ -18,10 +18,22 @@
     <span class="topbar__name">DOCLING REDACTOR</span>
   </div>
   <span class="topbar__tag">case-file redaction workroom</span>
-  <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle color mode">
-    <span class="theme-toggle__dot" aria-hidden="true"></span>
-    <span id="themeToggleLabel">Dark mode</span>
-  </button>
+  <div class="topbar__actions">
+    <button type="button" id="themeToggle" class="theme-toggle" aria-label="Toggle color mode">
+      <span class="theme-toggle__dot" aria-hidden="true"></span>
+      <span id="themeToggleLabel">Dark mode</span>
+    </button>
+    <button
+      type="button"
+      id="shutdown-app"
+      class="shutdown-trigger"
+      aria-haspopup="dialog"
+      aria-controls="shutdown-dialog"
+    >
+      <span class="shutdown-trigger__dot" aria-hidden="true"></span>
+      Shut down
+    </button>
+  </div>
 </header>
 
 <section class="hero">
@@ -142,16 +154,6 @@
 
 <footer class="foot">
   <span>Originals are never modified — redacted copies only.</span>
-  <button
-    type="button"
-    id="shutdown-app"
-    class="shutdown-trigger"
-    aria-haspopup="dialog"
-    aria-controls="shutdown-dialog"
-  >
-    <span class="shutdown-trigger__dot" aria-hidden="true"></span>
-    Shut down app
-  </button>
 </footer>
 
 <dialog id="shutdown-dialog" class="shutdown-dialog" aria-labelledby="shutdown-title">
