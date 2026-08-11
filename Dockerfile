@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
+    && ldconfig \
+    && ldconfig -p | grep -q 'libGL.so.1' \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

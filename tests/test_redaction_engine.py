@@ -1,10 +1,15 @@
+import logging
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from patterns import BUILTIN_PATTERNS
-from redaction_engine import RedactionEngine, build_rules
+from redaction_engine import (
+    RedactionEngine,
+    _DependencyNoiseFilter,
+    build_rules,
+)
 
 
 class RedactionEngineTests(unittest.TestCase):
@@ -49,6 +54,50 @@ class RedactionEngineTests(unittest.TestCase):
                 output.read_text(encoding="utf-8"),
                 "# Tax form\n\nEIN: [REDACTED]\n",
             )
+
+    def test_mps_layout_models_do_not_use_torch_compile(self):
+        from docling.datamodel.base_models import InputFormat
+
+        engine = RedactionEngine([])
+
+        with patch("torch.backends.mps.is_available", return_value=True):
+            converter = engine.converter
+
+        for input_format in (InputFormat.PDF, InputFormat.IMAGE):
+            engine_options = converter.format_to_options[
+                input_format
+            ].pipeline_options.layout_options.engine_options
+            self.assertFalse(engine_options.compile_model)
+
+    def test_expected_dependency_noise_is_suppressed(self):
+        log_filter = _DependencyNoiseFilter()
+        noisy_messages = (
+            "Using a slow image processor as `use_fast` is unset and a slow processor was saved",
+            "The text detection result is empty",
+            "RapidOCR returned empty result!",
+        )
+        unrelated = logging.LogRecord(
+            "RapidOCR",
+            logging.WARNING,
+            "",
+            0,
+            "OCR model initialization failed",
+            (),
+            None,
+        )
+
+        for message in noisy_messages:
+            record = logging.LogRecord(
+                "dependency",
+                logging.WARNING,
+                "",
+                0,
+                message,
+                (),
+                None,
+            )
+            self.assertFalse(log_filter.filter(record))
+        self.assertTrue(log_filter.filter(unrelated))
 
 
 if __name__ == "__main__":

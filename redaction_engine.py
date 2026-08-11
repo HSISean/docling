@@ -11,6 +11,7 @@ applied to that Markdown. Every successful redaction is written as a .md file.
 
 from __future__ import annotations
 
+import logging
 import re
 import traceback
 from dataclasses import dataclass
@@ -27,6 +28,34 @@ class Rule:
 
 
 LogFn = Optional[Callable[[str], None]]
+
+
+class _DependencyNoiseFilter(logging.Filter):
+    _message_prefixes = (
+        "Using a slow image processor as `use_fast` is unset",
+        "The text detection result is empty",
+        "RapidOCR returned empty result!",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith(
+            self._message_prefixes
+        )
+
+
+def _configure_dependency_logging() -> None:
+    logger_names = (
+        "transformers.models.auto.image_processing_auto",
+        "RapidOCR",
+        "docling.models.stages.ocr.rapid_ocr_model",
+    )
+    for logger_name in logger_names:
+        logger = logging.getLogger(logger_name)
+        if not any(
+            isinstance(log_filter, _DependencyNoiseFilter)
+            for log_filter in logger.filters
+        ):
+            logger.addFilter(_DependencyNoiseFilter())
 
 
 class RedactionEngine:
@@ -48,8 +77,25 @@ class RedactionEngine:
     def converter(self):
         if self._converter is None:
             self._log("Initializing docling document converter...")
+            import torch
+
+            from docling.datamodel.base_models import InputFormat
             from docling.document_converter import DocumentConverter
-            self._converter = DocumentConverter()
+
+            _configure_dependency_logging()
+            converter = DocumentConverter()
+            if torch.backends.mps.is_available():
+                for input_format in (InputFormat.PDF, InputFormat.IMAGE):
+                    pipeline_options = converter.format_to_options[
+                        input_format
+                    ].pipeline_options
+                    device = str(pipeline_options.accelerator_options.device)
+                    if device in {"auto", "mps"}:
+                        pipeline_options.layout_options.engine_options.compile_model = (
+                            False
+                        )
+
+            self._converter = converter
         return self._converter
 
     def extract_text_with_docling(self, path: Path) -> str:

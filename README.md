@@ -53,8 +53,13 @@ Heroku will build the `Dockerfile` and use `heroku.yml` automatically.
 ```bash
 heroku create your-app-name
 heroku buildpacks:set heroku/python -a your-app-name
+heroku buildpacks:add --index 1 heroku-community/apt -a your-app-name
 git push heroku main
 ```
+
+The Apt buildpack installs the native OpenGL libraries listed in `Aptfile`.
+Docling's OpenCV dependency imports `libGL.so.1` while processing PDFs, so a
+Python-only buildpack deployment will start successfully but fail on PDF input.
 
 If the build fails with a slug size error, switch to Option A.
 
