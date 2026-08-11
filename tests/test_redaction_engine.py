@@ -1,4 +1,5 @@
 import logging
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,7 +61,10 @@ class RedactionEngineTests(unittest.TestCase):
 
         engine = RedactionEngine([])
 
-        with patch("torch.backends.mps.is_available", return_value=True):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("torch.backends.mps.is_available", return_value=True),
+        ):
             converter = engine.converter
 
         for input_format in (InputFormat.PDF, InputFormat.IMAGE):
@@ -68,6 +72,26 @@ class RedactionEngineTests(unittest.TestCase):
                 input_format
             ].pipeline_options.layout_options.engine_options
             self.assertFalse(engine_options.compile_model)
+
+    def test_heroku_uses_low_memory_docling_settings(self):
+        from docling.datamodel.base_models import InputFormat
+
+        engine = RedactionEngine([])
+
+        with (
+            patch.dict(os.environ, {"DYNO": "web.1"}, clear=True),
+            patch("torch.backends.mps.is_available", return_value=False),
+        ):
+            converter = engine.converter
+
+        for input_format in (InputFormat.PDF, InputFormat.IMAGE):
+            options = converter.format_to_options[input_format].pipeline_options
+            self.assertEqual(options.accelerator_options.num_threads, 1)
+            self.assertEqual(options.ocr_batch_size, 1)
+            self.assertEqual(options.layout_batch_size, 1)
+            self.assertEqual(options.table_batch_size, 1)
+            self.assertEqual(options.queue_max_size, 1)
+            self.assertFalse(options.layout_options.engine_options.compile_model)
 
     def test_expected_dependency_noise_is_suppressed(self):
         log_filter = _DependencyNoiseFilter()

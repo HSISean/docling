@@ -12,6 +12,7 @@ applied to that Markdown. Every successful redaction is written as a .md file.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import traceback
 from dataclasses import dataclass
@@ -84,16 +85,21 @@ class RedactionEngine:
 
             _configure_dependency_logging()
             converter = DocumentConverter()
-            if torch.backends.mps.is_available():
-                for input_format in (InputFormat.PDF, InputFormat.IMAGE):
-                    pipeline_options = converter.format_to_options[
-                        input_format
-                    ].pipeline_options
-                    device = str(pipeline_options.accelerator_options.device)
-                    if device in {"auto", "mps"}:
-                        pipeline_options.layout_options.engine_options.compile_model = (
-                            False
-                        )
+            for input_format in (InputFormat.PDF, InputFormat.IMAGE):
+                pipeline_options = converter.format_to_options[
+                    input_format
+                ].pipeline_options
+                device = str(pipeline_options.accelerator_options.device)
+                if torch.backends.mps.is_available() and device in {"auto", "mps"}:
+                    pipeline_options.layout_options.engine_options.compile_model = False
+
+                if os.environ.get("DYNO"):
+                    pipeline_options.accelerator_options.num_threads = 1
+                    pipeline_options.ocr_batch_size = 1
+                    pipeline_options.layout_batch_size = 1
+                    pipeline_options.table_batch_size = 1
+                    pipeline_options.queue_max_size = 1
+                    pipeline_options.layout_options.engine_options.compile_model = False
 
             self._converter = converter
         return self._converter
