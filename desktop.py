@@ -14,9 +14,9 @@ def open_browser():
 if __name__ == "__main__":
     threading.Thread(target=open_browser, daemon=True).start()
 
-    serve(
-        app,
+    app.run(
         host="127.0.0.1",
         port=5000,
-        threads=4,
+        debug=False,
+        use_reloader=False,
     )
