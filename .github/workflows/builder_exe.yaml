@@ -42,14 +42,26 @@ jobs:
       - name: Build Docling Windows executable
         shell: pwsh
         run: |
-          python -m PyInstaller `
-            --clean `
-            --noconfirm `
-            --onefile `
-            --console `
-            --name "Docling" `
-            --distpath "$env:GITHUB_WORKSPACE\dist" `
-            desktop.py
+          $arguments = @(
+            "--clean"
+            "--noconfirm"
+            "--onefile"
+            "--console"
+            "--name", "Docling"
+            "--distpath", "$env:GITHUB_WORKSPACE\dist"
+          )
+
+          if (Test-Path "templates") {
+            $arguments += @("--add-data", "templates;templates")
+          }
+
+          if (Test-Path "static") {
+            $arguments += @("--add-data", "static;static")
+          }
+
+          $arguments += "desktop.py"
+
+          python -m PyInstaller @arguments
 
       - name: Verify generated executable
         shell: pwsh

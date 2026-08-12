@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import secrets
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -30,6 +31,9 @@ from werkzeug.utils import secure_filename, safe_join
 
 from patterns import BUILTIN_PATTERNS, BUILTIN_PATTERN_ORDER
 from redaction_engine import RedactionEngine, build_rules
+
+
+
 
 MAX_UPLOAD_MB = 60
 JOB_TTL_SECONDS = 60 * 60  # clean up job files after an hour
@@ -44,6 +48,23 @@ shutdown_token = secrets.token_urlsafe(32)
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
+
+
+
+def resource_path(relative_path):
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
+
+app = Flask(
+    __name__,
+    template_folder=resource_path("templates"),
+    static_folder=resource_path("static"),
+)
 
 # ---------------------------------------------------------------------- #
 # Job bookkeeping (in-memory — see README for the single-worker constraint)
