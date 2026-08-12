@@ -66,3 +66,88 @@ jobs:
           name: Docling-Windows
           path: ${{ github.workspace }}/dist/Docling.exe
           if-no-files-found: error
+          
+      - name: Smoke-test Docling Windows EXE
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "dist\Docling.exe"
+          $stdout = Join-Path $env:RUNNER_TEMP "docling-stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "docling-stderr.log"
+      
+          Write-Host "Starting $exe"
+      
+          $process = Start-Process `
+            -FilePath $exe `
+            -WorkingDirectory (Split-Path $exe) `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr `
+            -PassThru
+      
+          try {
+            $deadline = (Get-Date).AddMinutes(5)
+            $port = $null
+      
+            while ((Get-Date) -lt $deadline) {
+              Start-Sleep -Seconds 5
+              $process.Refresh()
+      
+              if ($process.HasExited) {
+                Write-Host "Docling.exe exited with code $($process.ExitCode)"
+                Write-Host "--- STDOUT ---"
+                if (Test-Path $stdout) { Get-Content $stdout }
+                Write-Host "--- STDERR ---"
+                if (Test-Path $stderr) { Get-Content $stderr }
+                throw "Docling.exe terminated before its Flask server became available."
+              }
+      
+              # Find a TCP port opened by the EXE.
+              $listener = Get-NetTCPConnection `
+                -State Listen `
+                -OwningProcess $process.Id `
+                -ErrorAction SilentlyContinue |
+                Where-Object {
+                  $_.LocalAddress -in @("127.0.0.1", "0.0.0.0", "::", "::1")
+                } |
+                Select-Object -First 1
+      
+              if ($listener) {
+                $port = $listener.LocalPort
+                Write-Host "Detected Flask server on port $port"
+                break
+              }
+      
+              Write-Host "Waiting for Flask server..."
+            }
+      
+            if (-not $port) {
+              Write-Host "--- STDOUT ---"
+              if (Test-Path $stdout) { Get-Content $stdout }
+              Write-Host "--- STDERR ---"
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw "No listening port was detected within five minutes."
+            }
+      
+            $response = Invoke-WebRequest `
+              -Uri "http://127.0.0.1:$port/" `
+              -UseBasicParsing `
+              -TimeoutSec 60
+      
+            Write-Host "HTTP status: $($response.StatusCode)"
+      
+            if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
+              throw "Flask returned unexpected HTTP status $($response.StatusCode)."
+            }
+      
+            Write-Host "SUCCESS: Docling.exe started and its Flask UI responded."
+          }
+          finally {
+            if ($process -and -not $process.HasExited) {
+              taskkill /PID $process.Id /T /F
+            }
+      
+            Write-Host "--- STDOUT ---"
+            if (Test-Path $stdout) { Get-Content $stdout }
+      
+            Write-Host "--- STDERR ---"
+            if (Test-Path $stderr) { Get-Content $stderr }
+          }
