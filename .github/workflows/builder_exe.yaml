@@ -50,7 +50,6 @@ jobs:
             --name "Docling" `
             --distpath "$env:GITHUB_WORKSPACE\dist" `
             desktop.py
-                )
 
           if (Test-Path "templates") {
             $arguments += @("--add-data", "templates;templates")
