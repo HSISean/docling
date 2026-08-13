@@ -39,17 +39,18 @@ jobs:
           Remove-Item "dist" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "Docling.spec" -Force -ErrorAction SilentlyContinue
 
-      - name: Build Docling Windows executable
+      - name: Build Docling Windows application
         shell: pwsh
         run: |
-          $arguments = @(
-            "--clean"
-            "--noconfirm"
-            "--onefile"
-            "--console"
-            "--name", "Docling"
-            "--distpath", "$env:GITHUB_WORKSPACE\dist"
-          )
+          python -m PyInstaller `
+            --clean `
+            --noconfirm `
+            --onedir `
+            --windowed `
+            --name "Docling" `
+            --distpath "$env:GITHUB_WORKSPACE\dist" `
+            desktop.py
+                )
 
           if (Test-Path "templates") {
             $arguments += @("--add-data", "templates;templates")
@@ -169,10 +170,17 @@ jobs:
             }
           }
 
-      - name: Upload Docling executable
+      - name: Create Windows package
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist\Docling\*" `
+            -DestinationPath "dist\Docling-Windows.zip" `
+            -Force
+
+      - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: Docling-Windows
-          path: dist/Docling.exe
+          path: dist/Docling-Windows.zip
           if-no-files-found: error
-          compression-level: 6
