@@ -50,6 +50,7 @@ jobs:
             "--name", "Docling"
             "--distpath", "$env:GITHUB_WORKSPACE\dist"
             "--collect-data", "docling_parse"
+            "--additional-hooks-dir", "pyinstaller_hooks"
           )
 
           if (Test-Path "templates") {
@@ -91,6 +92,20 @@ jobs:
 
           if (-not (Get-ChildItem $pdfResources -File -Recurse | Select-Object -First 1)) {
             throw "docling-parse PDF resources directory is empty at $pdfResources"
+          }
+
+          $doclingEntryPoints = Get-ChildItem `
+            (Join-Path $env:GITHUB_WORKSPACE "dist\Docling\_internal") `
+            -Filter "entry_points.txt" `
+            -File `
+            -Recurse |
+            Where-Object {
+              $_.FullName -match "docling[_-]slim-.*\.dist-info"
+            } |
+            Select-Object -First 1
+
+          if (-not $doclingEntryPoints) {
+            throw "Docling plugin entry-point metadata was not bundled."
           }
 
           Get-FileHash $exe -Algorithm SHA256
