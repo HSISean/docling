@@ -49,6 +49,7 @@ jobs:
             "--windowed"
             "--name", "Docling"
             "--distpath", "$env:GITHUB_WORKSPACE\dist"
+            "--collect-data", "docling_parse"
           )
 
           if (Test-Path "templates") {
@@ -78,6 +79,18 @@ jobs:
 
           if ($file.Length -eq 0) {
             throw "Docling.exe is empty."
+          }
+
+          $pdfResources = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "dist\Docling\_internal\docling_parse\pdf_resources"
+
+          if (-not (Test-Path $pdfResources -PathType Container)) {
+            throw "docling-parse PDF resources were not bundled at $pdfResources"
+          }
+
+          if (-not (Get-ChildItem $pdfResources -File -Recurse | Select-Object -First 1)) {
+            throw "docling-parse PDF resources directory is empty at $pdfResources"
           }
 
           Get-FileHash $exe -Algorithm SHA256
