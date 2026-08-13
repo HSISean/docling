@@ -1,23 +1,33 @@
 import os
 import threading
 import time
+import urllib.request
 import webbrowser
 
 from waitress import serve
 from app import app
 
 
-def open_browser():
-    """Open the Flask UI when running interactively."""
-    time.sleep(3)
-    webbrowser.open("http://127.0.0.1:5000/")
+APP_URL = "http://127.0.0.1:5000/"
+
+
+def open_browser_when_ready():
+    deadline = time.time() + 120
+
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(APP_URL, timeout=2) as response:
+                if 200 <= response.status < 400:
+                    webbrowser.open(APP_URL)
+                    return
+        except Exception:
+            time.sleep(0.25)
 
 
 if __name__ == "__main__":
-    # Do not open a browser during automated GitHub Actions testing.
     if os.environ.get("DOCLING_SKIP_BROWSER") != "1":
         threading.Thread(
-            target=open_browser,
+            target=open_browser_when_ready,
             daemon=True,
         ).start()
 
