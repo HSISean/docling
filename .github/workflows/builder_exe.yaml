@@ -42,14 +42,14 @@ jobs:
       - name: Build Docling Windows application
         shell: pwsh
         run: |
-          python -m PyInstaller `
-            --clean `
-            --noconfirm `
-            --onedir `
-            --windowed `
-            --name "Docling" `
-            --distpath "$env:GITHUB_WORKSPACE\dist" `
-            desktop.py
+          $arguments = @(
+            "--clean"
+            "--noconfirm"
+            "--onedir"
+            "--windowed"
+            "--name", "Docling"
+            "--distpath", "$env:GITHUB_WORKSPACE\dist"
+          )
 
           if (Test-Path "templates") {
             $arguments += @("--add-data", "templates;templates")
@@ -66,7 +66,7 @@ jobs:
       - name: Verify generated executable
         shell: pwsh
         run: |
-          $exe = Join-Path $env:GITHUB_WORKSPACE "dist\Docling.exe"
+          $exe = Join-Path $env:GITHUB_WORKSPACE "dist\Docling\Docling.exe"
 
           if (-not (Test-Path $exe)) {
             throw "Docling.exe was not generated at $exe"
@@ -87,7 +87,7 @@ jobs:
         run: |
           $env:DOCLING_SKIP_BROWSER = "1"
 
-          $exe = Resolve-Path "dist\Docling.exe"
+          $exe = Resolve-Path "dist\Docling\Docling.exe"
           $stdout = Join-Path $env:RUNNER_TEMP "docling-stdout.log"
           $stderr = Join-Path $env:RUNNER_TEMP "docling-stderr.log"
           $testUrl = "http://127.0.0.1:5000/"
