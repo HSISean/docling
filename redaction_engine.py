@@ -183,6 +183,15 @@ class RedactionEngine:
             i += 1
         return candidate
 
+def process_document_job(input_reference):
+    # Retrieve/open the PDF.
+    # Call your existing redaction code here.
+    # Save/upload the finished file.
+
+    return {
+        "status": "complete",
+        "output_reference": "...",
+    }
 
 def build_rules(
     builtin_selected: dict[str, str],

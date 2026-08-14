@@ -27,11 +27,14 @@ import zipfile
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, send_file, abort
+from redis import Redis
+from rq import Queue
 from werkzeug.utils import secure_filename, safe_join
 
 from patterns import BUILTIN_PATTERNS, BUILTIN_PATTERN_ORDER
 from redaction_engine import RedactionEngine, build_rules
-
+from rq.job import Job
+from rq.exceptions import NoSuchJobError
 
 
 
@@ -45,11 +48,23 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 shutdown_token = secrets.token_urlsafe(32)
 
+redis_connection = None
+document_queue = None
+
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
 
-
+if os.environ.get("REDIS_URL"):
+    redis_connection = Redis.from_url(
+        os.environ["REDIS_URL"],
+        ssl_cert_reqs=None,
+    )
+    document_queue = Queue(
+        "docling",
+        connection=redis_connection,
+        default_timeout=1800,
+    )
 
 def resource_path(relative_path):
     if getattr(sys, "frozen", False):
@@ -290,5 +305,67 @@ def shutdown_application():
 def provide_shutdown_token():
     return {"shutdown_token": shutdown_token}
 
+@app.get("/jobs/<job_id>")
+def job_status(job_id):
+    try:
+        job = Job.fetch(job_id, connection=redis_connection)
+    except NoSuchJobError:
+        return {"status": "missing", "error": "Job was not found"}, 404
+
+    return {
+        "id": job.id,
+        "status": job.get_status(refresh=True),
+        "result": job.result if job.is_finished else None,
+        "error": job.exc_info if job.is_failed else None,
+    }
+
+@app.post("/process")
+def process_document():
+    # Save/upload the submitted file first.
+    input_reference = "..."
+
+    if document_queue is None:
+        return jsonify(error="Background processing is unavailable"), 503
+
+    job = document_queue.enqueue(
+        "redaction_engine.process_document_job",
+        input_reference,
+        job_timeout=1800,
+        result_ttl=3600,
+        failure_ttl=86400,
+    )
+
+    return jsonify(
+        job_id=job.id,
+        status="queued",
+    ), 202
+
+@app.get("/jobs/<job_id>")
+def job_status(job_id):
+    if redis_connection is None:
+        return jsonify(error="Background processing is unavailable"), 503
+
+    try:
+        job = Job.fetch(job_id, connection=redis_connection)
+    except NoSuchJobError:
+        return jsonify(
+            status="missing",
+            error="Job was not found or expired",
+        ), 404
+
+    status = job.get_status(refresh=True)
+
+    response = {
+        "job_id": job.id,
+        "status": status,
+    }
+
+    if job.is_finished:
+        response["result"] = job.result
+
+    if job.is_failed:
+        response["error"] = job.exc_info
+
+    return jsonify(response)
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
