@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - updated_docling
+      - windows_app
 
 permissions:
   contents: read
@@ -85,67 +85,80 @@ jobs:
               -FilePath $env:GITHUB_ENV `
               -Encoding utf8 `
               -Append
+      - name: Locate Docling Parse resources
+        shell: pwsh
+        run: |
+          $doclingParseDirectory = python -c "import docling_parse, pathlib; print(pathlib.Path(docling_parse.__file__).resolve().parent)"
+          $pdfResourcesDirectory = Join-Path $doclingParseDirectory "pdf_resources"
+
+          Write-Host "docling_parse directory: $doclingParseDirectory"
+          Write-Host "PDF resources directory: $pdfResourcesDirectory"
+
+          if (!(Test-Path $pdfResourcesDirectory)) {
+            throw "docling_parse pdf_resources was not found: $pdfResourcesDirectory"
+          }
+
+          "DOCLING_PARSE_RESOURCES=$pdfResourcesDirectory" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 `
+              -Append
 
       - name: Build Docling
         shell: pwsh
         run: |
-          $arguments = @(
-            "--name", "Docling",
-            "--onedir",
-            "--noconfirm",
-            "--clean",
-            "--collect-all", "rapidocr",
-            "--collect-all", "docling",
-            "--collect-all", "docling_core",
-            "--add-data", "$env:RAPIDOCR_YAML;rapidocr",
-            "--add-data", "templates;templates",
-            "--add-data", "static;static"
-          )
-
-          if (Test-Path "pyinstaller_hooks") {
-            $arguments += @(
-              "--additional-hooks-dir",
-              "pyinstaller_hooks"
-            )
-          }
-
-          $arguments += "desktop.py"
-
-          Write-Host "Building desktop.py with Flask and RapidOCR resources"
-          python -m PyInstaller @arguments
+          python -m PyInstaller `
+            --name Docling `
+            --onedir `
+            --noconfirm `
+            --clean `
+            --additional-hooks-dir pyinstaller_hooks `
+            --collect-all rapidocr `
+            --collect-all docling `
+            --collect-all docling_core `
+            --collect-all docling_parse `
+            --add-data "$env:RAPIDOCR_YAML;rapidocr" `
+            --add-data "$env:DOCLING_PARSE_RESOURCES;docling_parse/pdf_resources" `
+            --add-data "templates;templates" `
+            --add-data "static;static" `
+            desktop.py
 
       - name: Verify Windows package
         shell: pwsh
         run: |
-          $applicationDirectory = "dist\Docling"
-          $internalDirectory = Join-Path $applicationDirectory "_internal"
-          $exe = Join-Path $applicationDirectory "Docling.exe"
-          $rapidocrYaml = Join-Path $internalDirectory "rapidocr\default_models.yaml"
-          $indexTemplate = Join-Path $internalDirectory "templates\index.html"
-          $staticDirectory = Join-Path $internalDirectory "static"
-
           $requiredFiles = @(
-            $exe,
-            $rapidocrYaml,
-            $indexTemplate
+            "dist\Docling\Docling.exe",
+            "dist\Docling\_internal\rapidocr\default_models.yaml",
+            "dist\Docling\_internal\templates\index.html"
+          )
+
+          $requiredDirectories = @(
+            "dist\Docling\_internal\static",
+            "dist\Docling\_internal\docling_parse\pdf_resources"
           )
 
           foreach ($file in $requiredFiles) {
             if (!(Test-Path $file)) {
-              throw "Required Windows package file is missing: $file"
+              throw "Required packaged file is missing: $file"
             }
 
-            Write-Host "Verified packaged file: $file"
+            Write-Host "Verified file: $file"
           }
 
-          if (!(Test-Path $staticDirectory)) {
-            throw "Static directory was not packaged: $staticDirectory"
-          }
+          foreach ($directory in $requiredDirectories) {
+            if (!(Test-Path $directory)) {
+              throw "Required packaged directory is missing: $directory"
+            }
 
-          Write-Host "Verified packaged directory: $staticDirectory"
-          Write-Host "Packaged templates:"
-          Get-ChildItem (Join-Path $internalDirectory "templates") -Recurse |
-            Select-Object FullName
+            $contents = Get-ChildItem $directory -Recurse -File
+
+            if ($contents.Count -eq 0) {
+              throw "Packaged directory is empty: $directory"
+            }
+
+            Write-Host "Verified directory: $directory"
+            Write-Host "Contained files: $($contents.Count)"
+          }
 
       - name: Create Windows ZIP
         shell: pwsh
