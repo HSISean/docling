@@ -9,6 +9,7 @@ from patterns import BUILTIN_PATTERNS
 from redaction_engine import (
     RedactionEngine,
     _DependencyNoiseFilter,
+    _build_converter,
     build_rules,
 )
 
@@ -59,13 +60,11 @@ class RedactionEngineTests(unittest.TestCase):
     def test_mps_layout_models_do_not_use_torch_compile(self):
         from docling.datamodel.base_models import InputFormat
 
-        engine = RedactionEngine([])
-
         with (
             patch.dict(os.environ, {}, clear=True),
             patch("torch.backends.mps.is_available", return_value=True),
         ):
-            converter = engine.converter
+            converter = _build_converter()
 
         for input_format in (InputFormat.PDF, InputFormat.IMAGE):
             engine_options = converter.format_to_options[
@@ -76,22 +75,32 @@ class RedactionEngineTests(unittest.TestCase):
     def test_heroku_uses_low_memory_docling_settings(self):
         from docling.datamodel.base_models import InputFormat
 
-        engine = RedactionEngine([])
-
         with (
             patch.dict(os.environ, {"DYNO": "web.1"}, clear=True),
             patch("torch.backends.mps.is_available", return_value=False),
         ):
-            converter = engine.converter
+            converter = _build_converter()
 
         for input_format in (InputFormat.PDF, InputFormat.IMAGE):
             options = converter.format_to_options[input_format].pipeline_options
             self.assertEqual(options.accelerator_options.num_threads, 1)
+            self.assertEqual(options.ocr_options.backend, "onnxruntime")
+            self.assertFalse(options.ocr_options.use_cls)
+            self.assertFalse(options.do_table_structure)
             self.assertEqual(options.ocr_batch_size, 1)
             self.assertEqual(options.layout_batch_size, 1)
             self.assertEqual(options.table_batch_size, 1)
             self.assertEqual(options.queue_max_size, 1)
             self.assertFalse(options.layout_options.engine_options.compile_model)
+
+    def test_docling_converter_is_shared_between_engines(self):
+        first = RedactionEngine([])
+        second = RedactionEngine([])
+        shared_converter = object()
+
+        with patch("redaction_engine._converter", shared_converter):
+            self.assertIs(first.converter, shared_converter)
+            self.assertIs(second.converter, shared_converter)
 
     def test_expected_dependency_noise_is_suppressed(self):
         log_filter = _DependencyNoiseFilter()

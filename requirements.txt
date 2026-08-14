@@ -4,6 +4,7 @@ flask>=3.0.0
 gunicorn>=22.0.0
 werkzeug>=3.0.0
 docling>=2.15.0
+onnxruntime>=1.20.0; sys_platform == "linux"
 # PyTorch ended Intel macOS wheels at 2.2.2. Transformers 5 disables that
 # version, so keep the compatible 4.x runtime on Intel development machines.
 torch==2.2.2; sys_platform == "darwin" and platform_machine == "x86_64"

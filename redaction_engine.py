@@ -17,9 +17,21 @@ import re
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Callable, Optional
 
 from patterns import DOCLING_PREVIEW_EXTENSIONS
+
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+from docling.document_converter import (
+    DocumentConverter,
+    ImageFormatOption,
+    PdfFormatOption,
+)
+
+_converter = None
+_converter_lock = Lock()
 
 
 @dataclass
@@ -59,6 +71,36 @@ def _configure_dependency_logging() -> None:
             logger.addFilter(_DependencyNoiseFilter())
 
 
+def _build_converter() -> DocumentConverter:
+    import torch
+
+    _configure_dependency_logging()
+    pipeline_options = PdfPipelineOptions()
+    device = str(pipeline_options.accelerator_options.device)
+
+    if torch.backends.mps.is_available() and device in {"auto", "mps"}:
+        pipeline_options.layout_options.engine_options.compile_model = False
+
+    if os.environ.get("DYNO"):
+        pipeline_options.accelerator_options.num_threads = 1
+        pipeline_options.ocr_options = RapidOcrOptions(
+            backend="onnxruntime",
+            use_cls=False,
+        )
+        pipeline_options.do_table_structure = False
+        pipeline_options.ocr_batch_size = 1
+        pipeline_options.layout_batch_size = 1
+        pipeline_options.table_batch_size = 1
+        pipeline_options.queue_max_size = 1
+        pipeline_options.layout_options.engine_options.compile_model = False
+
+    format_options = {
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+        InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
+    }
+    return DocumentConverter(format_options=format_options)
+
+
 class RedactionEngine:
     def __init__(
         self,
@@ -69,44 +111,26 @@ class RedactionEngine:
         self.rules = rules
         self.style = style
         self._log = log_fn or (lambda msg: None)
-        self._converter = None
 
     # ------------------------------------------------------------------ #
     # docling (detection / preview)
     # ------------------------------------------------------------------ #
     @property
     def converter(self):
-        if self._converter is None:
-            self._log("Initializing docling document converter...")
-            import torch
+        global _converter
 
-            from docling.datamodel.base_models import InputFormat
-            from docling.document_converter import DocumentConverter
-
-            _configure_dependency_logging()
-            converter = DocumentConverter()
-            for input_format in (InputFormat.PDF, InputFormat.IMAGE):
-                pipeline_options = converter.format_to_options[
-                    input_format
-                ].pipeline_options
-                device = str(pipeline_options.accelerator_options.device)
-                if torch.backends.mps.is_available() and device in {"auto", "mps"}:
-                    pipeline_options.layout_options.engine_options.compile_model = False
-
-                if os.environ.get("DYNO"):
-                    pipeline_options.accelerator_options.num_threads = 1
-                    pipeline_options.ocr_batch_size = 1
-                    pipeline_options.layout_batch_size = 1
-                    pipeline_options.table_batch_size = 1
-                    pipeline_options.queue_max_size = 1
-                    pipeline_options.layout_options.engine_options.compile_model = False
-
-            self._converter = converter
-        return self._converter
+        if _converter is None:
+            with _converter_lock:
+                if _converter is None:
+                    self._log("Initializing shared docling document converter...")
+                    _converter = _build_converter()
+        return _converter
 
     def extract_text_with_docling(self, path: Path) -> str:
         """Universal text extraction used for detection/preview across formats."""
-        result = self.converter.convert(str(path))
+        converter = self.converter
+        with _converter_lock:
+            result = converter.convert(str(path))
         return result.document.export_to_markdown()
 
     def find_matches(self, text: str) -> dict[str, int]:
