@@ -86,12 +86,15 @@ class RedactionEngineTests(unittest.TestCase):
             self.assertEqual(options.accelerator_options.num_threads, 1)
             self.assertEqual(options.ocr_options.backend, "onnxruntime")
             self.assertFalse(options.ocr_options.use_cls)
+            self.assertEqual(
+                options.layout_options.engine_options.engine_type,
+                "onnxruntime",
+            )
             self.assertFalse(options.do_table_structure)
             self.assertEqual(options.ocr_batch_size, 1)
             self.assertEqual(options.layout_batch_size, 1)
             self.assertEqual(options.table_batch_size, 1)
             self.assertEqual(options.queue_max_size, 1)
-            self.assertFalse(options.layout_options.engine_options.compile_model)
 
     def test_docling_converter_is_shared_between_engines(self):
         first = RedactionEngine([])

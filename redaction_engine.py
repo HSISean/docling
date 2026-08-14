@@ -23,7 +23,14 @@ from typing import Callable, Optional
 from patterns import DOCLING_PREVIEW_EXTENSIONS
 
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+from docling.datamodel.object_detection_engine_options import (
+    OnnxRuntimeObjectDetectionEngineOptions,
+)
+from docling.datamodel.pipeline_options import (
+    LayoutObjectDetectionOptions,
+    PdfPipelineOptions,
+    RapidOcrOptions,
+)
 from docling.document_converter import (
     DocumentConverter,
     ImageFormatOption,
@@ -87,12 +94,14 @@ def _build_converter() -> DocumentConverter:
             backend="onnxruntime",
             use_cls=False,
         )
+        pipeline_options.layout_options = LayoutObjectDetectionOptions(
+            engine_options=OnnxRuntimeObjectDetectionEngineOptions(),
+        )
         pipeline_options.do_table_structure = False
         pipeline_options.ocr_batch_size = 1
         pipeline_options.layout_batch_size = 1
         pipeline_options.table_batch_size = 1
         pipeline_options.queue_max_size = 1
-        pipeline_options.layout_options.engine_options.compile_model = False
 
     format_options = {
         InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
