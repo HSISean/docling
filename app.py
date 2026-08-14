@@ -208,14 +208,14 @@ def _run_job(job_id: str, files: list[Path], output_dir: Path, rules, style: str
     engine = RedactionEngine(rules, style=style, log_fn=lambda m: _log(job_id, m))
     try:
         for i, path in enumerate(files, start=1):
-            _log(job_id, f"[{i}/{len(files)}] Scanning {path.name} with docling...")
+            _log(job_id, f"[{i}/{len(files)}] Scanning {path.name}...")
             try:
                 matches = engine.scan(path)
                 if matches:
                     summary = ", ".join(f"{k}: {v}" for k, v in matches.items())
                     _log(job_id, f"  Detected -> {summary}")
                 else:
-                    _log(job_id, "  No matches in docling preview (Markdown export still runs).")
+                    _log(job_id, "  No matches in preview (Markdown export still runs).")
 
                 _log(job_id, f"  Redacting {path.name}...")
                 out_path = engine.redact(path, output_dir)

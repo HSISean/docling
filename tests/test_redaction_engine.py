@@ -2,6 +2,7 @@ import logging
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,29 +73,42 @@ class RedactionEngineTests(unittest.TestCase):
             ].pipeline_options.layout_options.engine_options
             self.assertFalse(engine_options.compile_model)
 
-    def test_heroku_uses_low_memory_docling_settings(self):
-        from docling.datamodel.base_models import InputFormat
+    def test_heroku_uses_lightweight_office_extraction(self):
+        engine = RedactionEngine([])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "tax-form.docx"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr(
+                    "word/document.xml",
+                    '<document><p><t>Tax ID: 12-3456789</t></p></document>',
+                )
+
+            with (
+                patch.dict(os.environ, {"DYNO": "web.1"}, clear=True),
+                patch.object(
+                    engine,
+                    "extract_text_with_docling",
+                    side_effect=AssertionError("Docling must not load on Heroku"),
+                ),
+            ):
+                text = engine.extract_text(source)
+
+        self.assertEqual(text, "Tax ID: 12-3456789")
+
+    def test_heroku_rejects_image_ocr_without_loading_docling(self):
+        engine = RedactionEngine([])
 
         with (
             patch.dict(os.environ, {"DYNO": "web.1"}, clear=True),
-            patch("torch.backends.mps.is_available", return_value=False),
+            patch.object(
+                engine,
+                "extract_text_with_docling",
+                side_effect=AssertionError("Docling must not load on Heroku"),
+            ),
         ):
-            converter = _build_converter()
-
-        for input_format in (InputFormat.PDF, InputFormat.IMAGE):
-            options = converter.format_to_options[input_format].pipeline_options
-            self.assertEqual(options.accelerator_options.num_threads, 1)
-            self.assertEqual(options.ocr_options.backend, "onnxruntime")
-            self.assertFalse(options.ocr_options.use_cls)
-            self.assertEqual(
-                options.layout_options.engine_options.engine_type,
-                "onnxruntime",
-            )
-            self.assertFalse(options.do_table_structure)
-            self.assertEqual(options.ocr_batch_size, 1)
-            self.assertEqual(options.layout_batch_size, 1)
-            self.assertEqual(options.table_batch_size, 1)
-            self.assertEqual(options.queue_max_size, 1)
+            with self.assertRaisesRegex(ValueError, "higher-memory worker"):
+                engine.extract_text(Path("scan.png"))
 
     def test_docling_converter_is_shared_between_engines(self):
         first = RedactionEngine([])

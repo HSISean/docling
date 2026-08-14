@@ -4,9 +4,10 @@ redaction_engine.py
 Architecture
 ------------
 Docling (docling.document_converter.DocumentConverter) is the universal
-parsing layer. It converts supported source files to Markdown, then the
-selected built-in PII patterns, custom keywords, and custom regex rules are
-applied to that Markdown. Every successful redaction is written as a .md file.
+parsing layer outside Heroku. Memory-constrained Heroku dynos use lightweight
+text-layer and Office XML extraction instead. The selected built-in PII
+patterns, custom keywords, and custom regex rules are applied to the extracted
+text, and every successful redaction is written as a .md file.
 """
 
 from __future__ import annotations
@@ -15,27 +16,15 @@ import logging
 import os
 import re
 import traceback
+import zipfile
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Optional
+from xml.etree import ElementTree
 
 from patterns import DOCLING_PREVIEW_EXTENSIONS
-
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.object_detection_engine_options import (
-    OnnxRuntimeObjectDetectionEngineOptions,
-)
-from docling.datamodel.pipeline_options import (
-    LayoutObjectDetectionOptions,
-    PdfPipelineOptions,
-    RapidOcrOptions,
-)
-from docling.document_converter import (
-    DocumentConverter,
-    ImageFormatOption,
-    PdfFormatOption,
-)
 
 _converter = None
 _converter_lock = Lock()
@@ -48,6 +37,16 @@ class Rule:
 
 
 LogFn = Optional[Callable[[str], None]]
+
+
+class _TextOnlyHtmlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.parts.append(data.strip())
 
 
 class _DependencyNoiseFilter(logging.Filter):
@@ -78,8 +77,16 @@ def _configure_dependency_logging() -> None:
             logger.addFilter(_DependencyNoiseFilter())
 
 
-def _build_converter() -> DocumentConverter:
+def _build_converter():
     import torch
+
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import (
+        DocumentConverter,
+        ImageFormatOption,
+        PdfFormatOption,
+    )
 
     _configure_dependency_logging()
     pipeline_options = PdfPipelineOptions()
@@ -87,21 +94,6 @@ def _build_converter() -> DocumentConverter:
 
     if torch.backends.mps.is_available() and device in {"auto", "mps"}:
         pipeline_options.layout_options.engine_options.compile_model = False
-
-    if os.environ.get("DYNO"):
-        pipeline_options.accelerator_options.num_threads = 1
-        pipeline_options.ocr_options = RapidOcrOptions(
-            backend="onnxruntime",
-            use_cls=False,
-        )
-        pipeline_options.layout_options = LayoutObjectDetectionOptions(
-            engine_options=OnnxRuntimeObjectDetectionEngineOptions(),
-        )
-        pipeline_options.do_table_structure = False
-        pipeline_options.ocr_batch_size = 1
-        pipeline_options.layout_batch_size = 1
-        pipeline_options.table_batch_size = 1
-        pipeline_options.queue_max_size = 1
 
     format_options = {
         InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
@@ -122,7 +114,7 @@ class RedactionEngine:
         self._log = log_fn or (lambda msg: None)
 
     # ------------------------------------------------------------------ #
-    # docling (detection / preview)
+    # extraction (detection / preview)
     # ------------------------------------------------------------------ #
     @property
     def converter(self):
@@ -142,6 +134,59 @@ class RedactionEngine:
             result = converter.convert(str(path))
         return result.document.export_to_markdown()
 
+    def extract_text(self, path: Path) -> str:
+        if os.environ.get("DYNO"):
+            return self._extract_text_low_memory(path)
+        return self.extract_text_with_docling(path)
+
+    @staticmethod
+    def _extract_text_low_memory(path: Path) -> str:
+        ext = path.suffix.lower()
+        if ext in {".txt", ".md", ".asciidoc"}:
+            return path.read_text(encoding="utf-8", errors="replace")
+        if ext in {".html", ".htm"}:
+            parser = _TextOnlyHtmlParser()
+            parser.feed(path.read_text(encoding="utf-8", errors="replace"))
+            return "\n".join(parser.parts)
+        if ext == ".pdf":
+            import pymupdf
+
+            with pymupdf.open(path) as document:
+                text = "\n\n".join(page.get_text() for page in document).strip()
+            if not text:
+                raise ValueError(
+                    "This PDF has no extractable text layer. OCR requires a "
+                    "higher-memory worker than this Heroku dyno."
+                )
+            return text
+        if ext in {".docx", ".pptx", ".xlsx"}:
+            with zipfile.ZipFile(path) as archive:
+                parts: list[str] = []
+                for name in archive.namelist():
+                    if not name.endswith(".xml"):
+                        continue
+                    if ext == ".docx" and not name.startswith("word/"):
+                        continue
+                    if ext == ".pptx" and not name.startswith("ppt/slides/"):
+                        continue
+                    if ext == ".xlsx" and not (
+                        name.startswith("xl/sharedStrings")
+                        or name.startswith("xl/worksheets/")
+                    ):
+                        continue
+                    root = ElementTree.fromstring(archive.read(name))
+                    parts.extend(
+                        node.text
+                        for node in root.iter()
+                        if node.text and node.text.strip()
+                    )
+            return "\n".join(parts)
+        if ext in {".png", ".jpg", ".jpeg", ".tiff", ".bmp"}:
+            raise ValueError(
+                "Image OCR requires a higher-memory worker than this Heroku dyno."
+            )
+        raise ValueError(f"Unsupported file format: {ext or '(none)'}")
+
     def find_matches(self, text: str) -> dict[str, int]:
         """Return {label: match_count} for the current rule set against text."""
         counts: dict[str, int] = {}
@@ -152,14 +197,14 @@ class RedactionEngine:
         return counts
 
     def scan(self, path: Path) -> dict[str, int]:
-        """Run docling extraction + detection, used for the pre-redaction preview."""
+        """Run extraction and detection for the pre-redaction preview."""
         ext = path.suffix.lower()
         if ext not in DOCLING_PREVIEW_EXTENSIONS:
             return {}
         try:
-            text = self.extract_text_with_docling(path)
+            text = self.extract_text(path)
         except Exception as exc:  # noqa: BLE001
-            self._log(f"  (docling preview failed for {path.name}: {exc})")
+            self._log(f"  (preview failed for {path.name}: {exc})")
             return {}
         return self.find_matches(text)
 
@@ -198,7 +243,7 @@ class RedactionEngine:
         if path.suffix.lower() in (".txt", ".md"):
             markdown = path.read_text(encoding="utf-8", errors="replace")
         else:
-            markdown = self.extract_text_with_docling(path)
+            markdown = self.extract_text(path)
 
         redacted_markdown, count = self._redact_string(markdown)
         out_path = self._unique_path(output_dir, path.stem, "_redacted.md")
