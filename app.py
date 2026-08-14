@@ -305,19 +305,7 @@ def shutdown_application():
 def provide_shutdown_token():
     return {"shutdown_token": shutdown_token}
 
-@app.route("/api/jobs/<job_id>")
-def job_status(job_id):
-    try:
-        job = Job.fetch(job_id, connection=redis_connection)
-    except NoSuchJobError:
-        return {"status": "missing", "error": "Job was not found"}, 404
 
-    return {
-        "id": job.id,
-        "status": job.get_status(refresh=True),
-        "result": job.result if job.is_finished else None,
-        "error": job.exc_info if job.is_failed else None,
-    }
 
 @app.post("/process")
 def process_document():
