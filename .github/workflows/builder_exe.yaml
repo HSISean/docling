@@ -1,18 +1,30 @@
+
 name: Build Windows EXE
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - updated_docling
+
+permissions:
+  contents: read
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    name: Build Docling for Windows
+    runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Display build source
+        shell: pwsh
+        run: |
+          Write-Host "Branch: $env:GITHUB_REF_NAME"
+          Write-Host "Commit: $env:GITHUB_SHA"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,58 +35,94 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
+
+          python --version
+          python -m PyInstaller --version
+
+      - name: Verify source resources
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            "app.py",
+            "desktop.py",
+            "redaction_engine.py",
+            "requirements.txt",
+            "templates\index.html"
+          )
+
+          foreach ($file in $requiredFiles) {
+            if (!(Test-Path $file)) {
+              throw "Required source file was not found: $file"
+            }
+
+            Write-Host "Verified source file: $file"
+          }
+
+          if (!(Test-Path "static")) {
+            throw "Required source directory was not found: static"
+          }
+
+          Write-Host "Verified source directory: static"
 
       - name: Locate RapidOCR configuration
         shell: pwsh
         run: |
-          $rapidocrDirectory = python -c "import rapidocr, pathlib; print(pathlib.Path(rapidocr.__file__).parent)"
+          $rapidocrDirectory = python -c "import rapidocr, pathlib; print(pathlib.Path(rapidocr.__file__).resolve().parent)"
           $rapidocrYaml = Join-Path $rapidocrDirectory "default_models.yaml"
 
           Write-Host "RapidOCR directory: $rapidocrDirectory"
           Write-Host "RapidOCR configuration: $rapidocrYaml"
 
           if (!(Test-Path $rapidocrYaml)) {
-            throw "RapidOCR default_models.yaml was not found at $rapidocrYaml"
+            throw "RapidOCR default_models.yaml was not found at: $rapidocrYaml"
           }
 
-          "RAPIDOCR_YAML=$rapidocrYaml" | Out-File `
-            -FilePath $env:GITHUB_ENV `
-            -Encoding utf8 `
-            -Append
-
-            - name: Show build version
-        shell: pwsh
-        run: |
-          Write-Host "Branch: $env:GITHUB_REF_NAME"
-          Write-Host "Commit: $env:GITHUB_SHA"
+          "RAPIDOCR_YAML=$rapidocrYaml" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 `
+              -Append
 
       - name: Build Docling
         shell: pwsh
         run: |
-          python -m PyInstaller `
-            --name Docling `
-            --onedir `
-            --noconfirm `
-            --clean `
-            --additional-hooks-dir pyinstaller_hooks `
-            --collect-all rapidocr `
-            --collect-all docling `
-            --collect-all docling_core `
-            --add-data "$env:RAPIDOCR_YAML;rapidocr" `
-            --add-data "templates;templates" `
-            --add-data "static;static" `
-            desktop.py
+          $arguments = @(
+            "--name", "Docling",
+            "--onedir",
+            "--noconfirm",
+            "--clean",
+            "--collect-all", "rapidocr",
+            "--collect-all", "docling",
+            "--collect-all", "docling_core",
+            "--add-data", "$env:RAPIDOCR_YAML;rapidocr",
+            "--add-data", "templates;templates",
+            "--add-data", "static;static"
+          )
+
+          if (Test-Path "pyinstaller_hooks") {
+            $arguments += @(
+              "--additional-hooks-dir",
+              "pyinstaller_hooks"
+            )
+          }
+
+          $arguments += "desktop.py"
+
+          Write-Host "Building desktop.py with Flask and RapidOCR resources"
+          python -m PyInstaller @arguments
 
       - name: Verify Windows package
         shell: pwsh
         run: |
-          $exe = "dist\Docling\Docling.exe"
-          $rapidocrYaml = "dist\Docling\_internal\rapidocr\default_models.yaml"
-          $indexTemplate = "dist\Docling\_internal\templates\index.html"
-          $staticDirectory = "dist\Docling\_internal\static"
+          $applicationDirectory = "dist\Docling"
+          $internalDirectory = Join-Path $applicationDirectory "_internal"
+          $exe = Join-Path $applicationDirectory "Docling.exe"
+          $rapidocrYaml = Join-Path $internalDirectory "rapidocr\default_models.yaml"
+          $indexTemplate = Join-Path $internalDirectory "templates\index.html"
+          $staticDirectory = Join-Path $internalDirectory "static"
 
           $requiredFiles = @(
             $exe,
@@ -87,19 +135,16 @@ jobs:
               throw "Required Windows package file is missing: $file"
             }
 
-            Write-Host "Verified: $file"
+            Write-Host "Verified packaged file: $file"
           }
 
           if (!(Test-Path $staticDirectory)) {
             throw "Static directory was not packaged: $staticDirectory"
           }
 
-          Write-Host "Verified: $staticDirectory"
-
+          Write-Host "Verified packaged directory: $staticDirectory"
           Write-Host "Packaged templates:"
-          Get-ChildItem `
-            "dist\Docling\_internal\templates" `
-            -Recurse |
+          Get-ChildItem (Join-Path $internalDirectory "templates") -Recurse |
             Select-Object FullName
 
       - name: Create Windows ZIP
@@ -108,11 +153,14 @@ jobs:
           $zipName = "Docling-Windows-$env:GITHUB_SHA.zip"
           $zipPath = Join-Path "dist" $zipName
 
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
           Compress-Archive `
             -Path "dist\Docling" `
             -DestinationPath $zipPath `
-            -CompressionLevel Optimal `
-            -Force
+            -CompressionLevel Optimal
 
           if (!(Test-Path $zipPath)) {
             throw "Windows ZIP was not created: $zipPath"
@@ -124,7 +172,7 @@ jobs:
               -Encoding utf8 `
               -Append
 
-          Write-Host "Created: $zipPath"
+          Write-Host "Created Windows ZIP: $zipPath"
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
@@ -133,3 +181,4 @@ jobs:
           path: ${{ env.WINDOWS_ZIP }}
           if-no-files-found: error
           compression-level: 0
+          overwrite: true
