@@ -230,13 +230,13 @@ def _run_job(job_id: str, files: list[Path], output_dir: Path, rules, style: str
         _finish_job(job_id, "error", str(exc))
 
 
-# @app.route("/api/jobs/<job_id>")
-# def api_job_status(job_id: str):
-#     with _jobs_lock:
-#         job = _jobs.get(job_id)
-#         if not job:
-#             return jsonify({"error": "Unknown or expired job."}), 404
-#         return jsonify(job)
+@app.route("/api/jobs/<job_id>")
+def api_job_status(job_id: str):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return jsonify({"error": "Unknown or expired job."}), 404
+        return jsonify(job)
 
 
 def _job_output_path(job_id: str, filename: str) -> Path | None:
