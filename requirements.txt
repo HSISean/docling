@@ -11,3 +11,5 @@ numpy<2; sys_platform == "darwin" and platform_machine == "x86_64"
 opencv-python<4.12; sys_platform == "darwin" and platform_machine == "x86_64"
 transformers<5
 waitress
+redis
+rq
